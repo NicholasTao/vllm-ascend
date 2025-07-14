@@ -47,7 +47,8 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.model_loader.weight_utils import (
     default_weight_loader, maybe_remap_kv_scale_name)
 from vllm.model_executor.models.interfaces import SupportsLoRA, SupportsPP
-from vllm.model_executor.models.qwen2 import Qwen2Attention  # noqa: F401
+from vllm.model_executor.models.qwen2 \
+    import Qwen2Attention, Qwen2Model  # noqa: F401
 from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM  # noqa: F401
 from vllm.model_executor.models.utils import (
     AutoWeightsLoader, PPMissingLayer, extract_layer_index,
@@ -118,7 +119,7 @@ class CustomQwen2MLP(nn.Module):
         return x
 
 
-class CustomQwen2Attention(nn.Module):
+class CustomQwen2Attention(Qwen2Attention):
 
     def __init__(
         self,
@@ -134,8 +135,18 @@ class CustomQwen2Attention(nn.Module):
         attn_type: str = AttentionType.DECODER,
         dual_chunk_attention_config: Optional[dict[str, Any]] = None,
     ) -> None:
-        super().__init__()
-        self.hidden_size = hidden_size
+        super().__init__(
+            hidden_size=hidden_size,
+            num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
+            max_position=max_position,
+            rope_theta=rope_theta,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            rope_scaling=rope_scaling,
+            prefix=prefix,
+            attn_type=attn_type,
+            dual_chunk_attention_config=dual_chunk_attention_config)
         tp_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = num_heads
         assert self.total_num_heads % tp_size == 0
@@ -362,7 +373,7 @@ class CustomQwen2DecoderLayer(nn.Module):
         "intermediate_tensors": 0,
         "inputs_embeds": 0,
     })
-class CustomQwen2Model(nn.Module):
+class CustomQwen2Model(Qwen2Model):
 
     def __init__(
             self,
@@ -370,7 +381,9 @@ class CustomQwen2Model(nn.Module):
             vllm_config: VllmConfig,
             prefix: str = "",
             decoder_layer_type: type[nn.Module] = CustomQwen2DecoderLayer):
-        super().__init__()
+        super().__init__(vllm_config=vllm_config,
+                         prefix=prefix,
+                         decoder_layer_type=decoder_layer_type)
         self.tp_size = get_tensor_model_parallel_world_size()
         self.cos_sin_cache = (self.layers[0].self_attn.rotary_emb.cos_sin_cache
                               )  # type: ignore[has-type]
