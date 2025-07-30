@@ -394,7 +394,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        kv_cache: torch.Tensor,
+        kv_cache: Tuple[torch.Tensor],
         attn_metadata: AscendMetadata,
         output: Optional[torch.Tensor] = None,
         trace_flag: bool = True,
@@ -498,17 +498,23 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     key_cache = kv_cache[0].view(*kv_cache[0].shape[:-2], -1)
                     value_cache = kv_cache[1].view(*kv_cache[1].shape[:-2], -1)
 
-                    output = torch_npu.npu_incre_flash_attention(
-                        query=query,
+                    output, _ = torch_npu.npu_fused_infer_attention_score(
+                        query=query.contiguous(),
                         key=key_cache,
                         value=value_cache,
+                        query_rope=None,
+                        key_rope=None,
                         num_heads=self.num_heads,
                         num_key_value_heads=self.num_kv_heads,
                         input_layout='BSH',
-                        scale_value=self.scale,
-                        actual_seq_lengths=attn_metadata.seq_lens_list,
+                        atten_mask=attn_metadata.attn_mask,
+                        sparse_mode=0,
+                        scale=self.scale,
+                        antiquant_mode=0,
+                        antiquant_scale=None,
                         block_table=attn_metadata.block_tables,
                         block_size=kv_cache[0].shape[1],
+                        actual_seq_lengths_kv=attn_metadata.seq_lens_list,
                     )
                 elif not get_forward_context().capturing:
                     torch_npu._npu_paged_attention(
